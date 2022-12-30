@@ -122,12 +122,12 @@ impl Theme {
             hint: Style::new().fg(Fixed(245)),
             keyword: Style::new().fg(Fixed(21)),
             name: Style::new().fg(Fixed(57)),
-            comment: Style::new().fg(Fixed(34)),
+            comment: Style::new(),
             string: Style::new().fg(Fixed(130)),
             error: Style::new().bold().fg(Fixed(160)).on(Fixed(252)),
-            number: Style::new(),
-            operator: Style::new(),
-            bracket: Style::new(),
+            number: Style::new().fg(Fixed(142)),
+            operator: Style::new().fg(Fixed(34)),
+            bracket: Style::new().fg(Fixed(209)),
         }
     }
 
@@ -137,12 +137,12 @@ impl Theme {
             hint: Style::new().fg(Fixed(240)),
             keyword: Style::new().fg(Fixed(45)),
             name: Style::new().fg(Fixed(69)),
-            comment: Style::new().fg(Fixed(46)),
+            comment: Style::new(),
             string: Style::new().fg(Fixed(215)),
-            error: Style::new().bold().fg(Fixed(196)).on(Fixed(252)),
-            number: Style::new(),
-            operator: Style::new(),
-            bracket: Style::new(),
+            error: Style::new().bold().fg(Fixed(196)).on(Fixed(250)),
+            number: Style::new().fg(Fixed(143)),
+            operator: Style::new().fg(Fixed(46)),
+            bracket: Style::new().fg(Fixed(208)),
         }
     }
 }

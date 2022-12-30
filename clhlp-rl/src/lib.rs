@@ -1,7 +1,7 @@
 //! Rustyline helpers for command line interpreters.
 
 mod rustyhelper;
-mod themes;
+pub mod themes;
 
 pub use clhlp_tkz::{DateResult, Syntax, Token, TokenSpan, TokenType, Tokenizer};
 
