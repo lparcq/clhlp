@@ -1,3 +1,11 @@
+//! Command Line Tokenizer
+//!
+//! Command line parser for interpreters implemented as a space separated commands.
+//!
+//! Token types depends on the previous tokens and the position in the line.
+//! An object implementing trait `Syntax` must be provided to tell the tokenizer what is the
+//! expected type of the current token. It also parses dates.
+
 use std::fmt::{self, Display};
 use thiserror::Error as ThisError;
 
