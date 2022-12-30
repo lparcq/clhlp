@@ -361,7 +361,7 @@ mod test {
 
     use std::fmt::Display;
 
-    use crate::tokenizer::{Token, TokenSpan};
+    use clhlp_tkz::{Token, TokenSpan};
 
     use super::HelperState;
 
