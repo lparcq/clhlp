@@ -16,6 +16,18 @@ use clhlp_tkz::{span_matches, Syntax, Token, TokenSpan, Tokenizer};
 
 pub use crate::themes::{Style, Theme};
 
+macro_rules! span_position {
+    ( $spans:expr, $variant:ident ) => {
+        $spans.iter().position(|span| span_matches!(span, $variant))
+    };
+}
+
+macro_rules! spans_contain {
+    ( $spans:expr, $variant:ident ) => {
+        span_position!($spans, $variant).is_some()
+    };
+}
+
 /// Text span with a given style.
 struct StyleSpan<'a> {
     pub style: &'a Style,
@@ -280,22 +292,20 @@ impl<'a, 'g, S: Syntax, G: Guesser<S>> Validator for RustyLineHelper<'a, 'g, S, 
     /// Valide the current line.
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> RustyLineResult<ValidationResult> {
         let state = self.state.borrow();
-        let nspans = state.spans.len();
-        Ok(
-            match state
-                .spans
-                .iter()
-                .position(|span| span_matches!(span, Invalid))
-            {
-                None => ValidationResult::Valid(None),
-                Some(span_index) if span_index + 1 >= nspans => ValidationResult::Incomplete,
-                Some(span_index) => ValidationResult::Invalid(self.syntax.syntax_error(
-                    ctx.input(),
-                    &state.spans,
-                    span_index,
-                )),
-            },
-        )
+        Ok(match span_position!(state.spans, Invalid) {
+            Some(span_index) => ValidationResult::Invalid(self.syntax.syntax_error(
+                ctx.input(),
+                &state.spans,
+                span_index,
+            )),
+            None => {
+                if spans_contain!(state.spans, Unknown) {
+                    ValidationResult::Incomplete
+                } else {
+                    ValidationResult::Valid(None)
+                }
+            }
+        })
     }
 
     fn validate_while_typing(&self) -> bool {
