@@ -28,6 +28,14 @@ pub enum TokenType<K> {
     Date,
 }
 
+/// Either a token type, an unexpected token or an unspecified token type.w
+#[derive(Debug)]
+pub enum TokenOption<K> {
+    Type(TokenType<K>),
+    Unspecified,
+    Invalid,
+}
+
 /// All possible tokens. Keywords are provided as a generic type.
 ///
 /// If `TokenType::String` is expected, the resulting token can be either:
@@ -48,6 +56,7 @@ pub enum Token<K: Display> {
     Signed(i64),
     Float(f64),
     Date(DateTime<FixedOffset>),
+    Invalid(String),
     Unknown(String),
 }
 
@@ -55,7 +64,9 @@ impl<K: Display> Display for Token<K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Keyword(kw) => write!(f, "{}", kw),
-            Token::Name(s) | Token::String(s) | Token::Unknown(s) => write!(f, "{}", s),
+            Token::Name(s) | Token::String(s) | Token::Unknown(s) | Token::Invalid(s) => {
+                write!(f, "{}", s)
+            }
             Token::Operator(c) | Token::OpenBracket(c) | Token::CloseBracket(c) => {
                 write!(f, "{}", c)
             }
@@ -181,7 +192,22 @@ pub trait Syntax {
         &self,
         spans: &[TokenSpan<Self::Keyword>],
         value: &str,
-    ) -> Option<TokenType<Self::Keyword>>;
+    ) -> TokenOption<Self::Keyword>;
+
+    /// Error message for syntax error
+    fn syntax_error(
+        &self,
+        line: &str,
+        spans: &[TokenSpan<Self::Keyword>],
+        span_index: usize,
+    ) -> Option<String> {
+        let span = &spans[span_index];
+        Some(format!(
+            "syntax error at position {}: {}",
+            span.start,
+            &line[span.start..span.end]
+        ))
+    }
 }
 
 /// Test is a span matches token types.
@@ -270,20 +296,20 @@ impl<'a, S: Syntax> Tokenizer<'a, S> {
             TokenType::Unsigned => value
                 .parse::<u64>()
                 .map(Token::Unsigned)
-                .unwrap_or_else(|_| Token::Unknown(value.to_string())),
+                .unwrap_or_else(|_| Token::Invalid(value.to_string())),
             TokenType::Signed => value
                 .parse::<i64>()
                 .map(Token::Signed)
-                .unwrap_or_else(|_| Token::Unknown(value.to_string())),
+                .unwrap_or_else(|_| Token::Invalid(value.to_string())),
             TokenType::Float => value
                 .parse::<f64>()
                 .map(Token::Float)
-                .unwrap_or_else(|_| Token::Unknown(value.to_string())),
+                .unwrap_or_else(|_| Token::Invalid(value.to_string())),
             TokenType::Date => self
                 .syntax
                 .parse_date(value)
                 .map(Token::Date)
-                .unwrap_or_else(|_| Token::Unknown(value.to_string())),
+                .unwrap_or_else(|_| Token::Invalid(value.to_string())),
         }
     }
 
@@ -298,8 +324,9 @@ impl<'a, S: Syntax> Tokenizer<'a, S> {
         let value = buffer.trim_start();
         if !value.is_empty() {
             let token = match self.syntax.token_type(spans, value) {
-                Some(token_type) => self.new_token(token_type, value),
-                None => Token::Unknown(value.to_string()),
+                TokenOption::Type(token_type) => self.new_token(token_type, value),
+                TokenOption::Unspecified => Token::Unknown(value.to_string()),
+                TokenOption::Invalid => Token::Invalid(value.to_string()),
             };
             spans.push(TokenSpan::new(token, start, end))
         }
@@ -366,7 +393,10 @@ mod test {
     use std::{fmt, str::FromStr};
     use thiserror::Error as ThisError;
 
-    use super::{parse_local_datetime, DateError, Syntax, Token, TokenSpan, TokenType, Tokenizer};
+    use super::{
+        parse_local_datetime, DateError, Syntax, Token, TokenOption, TokenSpan, TokenType,
+        Tokenizer,
+    };
 
     #[derive(ThisError, Debug)]
     pub enum SyntaxError {
@@ -404,11 +434,11 @@ mod test {
             &self,
             _spans: &[TokenSpan<Self::Keyword>],
             value: &str,
-        ) -> Option<TokenType<Self::Keyword>> {
+        ) -> TokenOption<Self::Keyword> {
             if value.parse::<i64>().is_ok() {
-                Some(TokenType::Signed)
+                TokenOption::Type(TokenType::Signed)
             } else {
-                Some(TokenType::String)
+                TokenOption::Type(TokenType::String)
             }
         }
     }
@@ -575,8 +605,11 @@ mod test {
     struct SyntaxWithKeywords {}
 
     impl SyntaxWithKeywords {
-        fn keyword(value: &str) -> Option<TokenType<Keyword>> {
-            Keyword::from_str(value).ok().map(TokenType::Keyword)
+        fn keyword(value: &str) -> TokenOption<Keyword> {
+            match Keyword::from_str(value) {
+                Ok(kw) => TokenOption::Type(TokenType::Keyword(kw)),
+                Err(_) => TokenOption::Invalid,
+            }
         }
     }
 
@@ -587,27 +620,28 @@ mod test {
             &self,
             spans: &[TokenSpan<Self::Keyword>],
             value: &str,
-        ) -> Option<TokenType<Self::Keyword>> {
+        ) -> TokenOption<Self::Keyword> {
             if spans.is_empty() {
                 SyntaxWithKeywords::keyword(value)
             } else if spans.len() == 1 {
                 match spans[0].token {
                     Token::Keyword(Keyword::Help) => SyntaxWithKeywords::keyword(value),
-                    Token::Keyword(Keyword::Get) => Some(TokenType::Name),
-                    Token::Keyword(Keyword::Set) => Some(TokenType::Name),
-                    _ => None,
+                    Token::Keyword(Keyword::Get | Keyword::Set) => {
+                        TokenOption::Type(TokenType::Name)
+                    }
+                    _ => TokenOption::Invalid,
                 }
             } else if spans.len() == 2 && matches!(spans[0].token, Token::Keyword(Keyword::Set)) {
                 let Token::Name(ref name) = spans[1].token else {
                     panic!("expecting a name");
                 };
                 if name == "date" {
-                    Some(TokenType::Date)
+                    TokenOption::Type(TokenType::Date)
                 } else {
-                    Some(TokenType::String)
+                    TokenOption::Type(TokenType::String)
                 }
             } else {
-                None
+                TokenOption::Invalid
             }
         }
     }
@@ -629,7 +663,7 @@ mod test {
             (
                 vec![
                     token_span!(Keyword, Keyword::Help, 0, 4),
-                    token_span!(Unknown, "unknown".to_owned(), 5, 12),
+                    token_span!(Invalid, "unknown".to_owned(), 5, 12),
                 ],
                 "help unknown ",
             ),

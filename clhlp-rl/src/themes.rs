@@ -127,7 +127,7 @@ impl Theme {
             error: Style::new().bold().fg(Fixed(160)).on(Fixed(252)),
             number: Style::new().fg(Fixed(142)),
             operator: Style::new().fg(Fixed(34)),
-            bracket: Style::new().fg(Fixed(209)),
+            bracket: Style::new().fg(Fixed(168)),
         }
     }
 
@@ -142,7 +142,7 @@ impl Theme {
             error: Style::new().bold().fg(Fixed(196)).on(Fixed(250)),
             number: Style::new().fg(Fixed(143)),
             operator: Style::new().fg(Fixed(46)),
-            bracket: Style::new().fg(Fixed(208)),
+            bracket: Style::new().fg(Fixed(209)),
         }
     }
 }

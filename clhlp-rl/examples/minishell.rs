@@ -98,8 +98,11 @@ struct MiniSyntax {}
 
 impl MiniSyntax {
     /// Create a keyword token type.
-    fn keyword(value: &str) -> Option<TokenType<Keyword>> {
-        Keyword::from_str(value).ok().map(|k| TokenType::Keyword(k))
+    fn keyword_or_name(value: &str) -> TokenOption<Keyword> {
+        match Keyword::from_str(value) {
+            Ok(kw) => TokenOption::Type(TokenType::Keyword(kw)),
+            Err(_) => TokenOption::Type(TokenType::Name),
+        }
     }
 }
 
@@ -119,18 +122,27 @@ impl Syntax for MiniSyntax {
         &self,
         spans: &[TokenSpan<Self::Keyword>],
         value: &str,
-    ) -> Option<TokenType<Self::Keyword>> {
+    ) -> TokenOption<Self::Keyword> {
         let nspans = spans.len();
         if spans.is_empty() {
-            MiniSyntax::keyword(value).or(Some(TokenType::Name))
+            MiniSyntax::keyword_or_name(value)
         } else {
             match spans[0].token {
-                Token::Keyword(Keyword::Help) if nspans == 1 => MiniSyntax::keyword(value),
+                Token::Keyword(Keyword::Help) if nspans == 1 => MiniSyntax::keyword_or_name(value),
                 Token::Keyword(Keyword::ChangeDirectory | Keyword::ListFiles) if nspans == 1 => {
-                    Some(TokenType::String)
+                    if Path::new(value).exists() {
+                        TokenOption::Type(TokenType::String)
+                    } else {
+                        TokenOption::Unspecified
+                    }
                 }
-                Token::Keyword(Keyword::ListFiles) | Token::Name(_) => Some(TokenType::String),
-                _ => None,
+                Token::Keyword(Keyword::ListFiles) | Token::Name(_) => {
+                    TokenOption::Type(TokenType::String)
+                }
+                Token::Keyword(Keyword::ChangeDirectory | Keyword::CurrentDirectory) => {
+                    TokenOption::Invalid
+                }
+                _ => TokenOption::Unspecified,
             }
         }
     }
@@ -292,7 +304,7 @@ where
                 Err(err) => eprintln!("{}: {}", pattern, err),
             }
         } else {
-            eprintln!("{:?}: invalid argument", token);
+            eprintln!("{}: invalid argument", token);
         }
     })
 }

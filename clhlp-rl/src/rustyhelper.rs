@@ -27,10 +27,6 @@ impl<'a> StyleSpan<'a> {
     fn new(style: &'a Style, start: usize, end: usize) -> Self {
         StyleSpan { style, start, end }
     }
-
-    fn with_style(self, style: &'a Style) -> Self {
-        StyleSpan::new(style, self.start, self.end)
-    }
 }
 
 struct HelperState<K: Display> {
@@ -191,6 +187,7 @@ impl<'a, 'g, S: Syntax, G: Guesser<S>> RustyLineHelper<'a, 'g, S, G> {
         }
     }
 
+    /// Return the style of a span corresponding to a token.
     fn token_style(&self, span: &TokenSpan<S::Keyword>) -> StyleSpan {
         let style = match span.token {
             Token::Keyword(_) => &self.theme.keyword,
@@ -200,11 +197,13 @@ impl<'a, 'g, S: Syntax, G: Guesser<S>> RustyLineHelper<'a, 'g, S, G> {
             Token::String(_) | Token::BackQuoted(_) | Token::Date(_) => &self.theme.string,
             Token::PartialString(_) => &self.no_style,
             Token::Unsigned(_) | Token::Signed(_) | Token::Float(_) => &self.theme.number,
-            Token::Unknown(_) => &self.theme.error,
+            Token::Invalid(_) => &self.theme.error,
+            Token::Unknown(_) => &self.no_style,
         };
         StyleSpan::new(style, span.start, span.end)
     }
 
+    /// Apply to the token the corresponding style.
     fn apply_style(&self, line: &str, span: &StyleSpan) -> String {
         format!("{}", span.style.paint(&line[span.start..span.end]))
     }
@@ -216,10 +215,8 @@ impl<'a, 'g, S: Syntax, G: Guesser<S>> RustyLineHelper<'a, 'g, S, G> {
         cursor_pos: usize,
         spans: &[TokenSpan<S::Keyword>],
     ) -> String {
-        let line_end = line.len();
         let mut bracket_matcher = BracketMatcher::new(cursor_pos);
         let mut styles: Vec<StyleSpan> = Vec::new();
-        let mut last_is_incomplete = false;
         for span in spans {
             let mut style_span = self.token_style(span);
             if let Some(bmatch) = bracket_matcher.match_span(span) {
@@ -229,13 +226,7 @@ impl<'a, 'g, S: Syntax, G: Guesser<S>> RustyLineHelper<'a, 'g, S, G> {
                     BracketMatch::Previous(pos) => styles[pos].style = &self.matching_bracket_style,
                 }
             }
-            last_is_incomplete = matches!(span.token, Token::Unknown(_)) && span.end == line_end;
             styles.push(style_span);
-        }
-        if last_is_incomplete {
-            if let Some(span) = styles.pop() {
-                styles.push(span.with_style(&self.no_style))
-            }
         }
         let mut result = String::with_capacity(line.len());
         let mut last = 0;
@@ -286,20 +277,25 @@ impl<'a, 'g, S: Syntax, G: Guesser<S>> Highlighter for RustyLineHelper<'a, 'g, S
 }
 
 impl<'a, 'g, S: Syntax, G: Guesser<S>> Validator for RustyLineHelper<'a, 'g, S, G> {
-    fn validate(&self, _ctx: &mut ValidationContext<'_>) -> RustyLineResult<ValidationResult> {
+    /// Valide the current line.
+    fn validate(&self, ctx: &mut ValidationContext<'_>) -> RustyLineResult<ValidationResult> {
         let state = self.state.borrow();
-        let nerrors = state
-            .spans
-            .iter()
-            .filter(|span| span_matches!(span, Unknown))
-            .count();
-        Ok(if nerrors == 0 {
-            ValidationResult::Valid(None)
-        } else if nerrors == 1 && span_matches!(state.spans.last().unwrap(), Unknown) {
-            ValidationResult::Incomplete
-        } else {
-            ValidationResult::Invalid(None)
-        })
+        let nspans = state.spans.len();
+        Ok(
+            match state
+                .spans
+                .iter()
+                .position(|span| span_matches!(span, Invalid))
+            {
+                None => ValidationResult::Valid(None),
+                Some(span_index) if span_index + 1 >= nspans => ValidationResult::Incomplete,
+                Some(span_index) => ValidationResult::Invalid(self.syntax.syntax_error(
+                    ctx.input(),
+                    &state.spans,
+                    span_index,
+                )),
+            },
+        )
     }
 
     fn validate_while_typing(&self) -> bool {
